@@ -425,10 +425,10 @@ elif menu == "🤖 Prediksi Energi":
     | **Renewables share** | Proporsi energi terbarukan |
     | **Carbon intensity** | Seberapa kotor listriknya  |
     """)
-   
+    
     # -------------------------------
-    # 6️⃣ Halaman: Peta Energi Dunia
-    # -------------------------------
+# 6️⃣ Halaman: Peta Energi Dunia
+# -------------------------------
 elif menu == "🌍 Peta Energi Dunia":
     st.title("🌍 Peta Konsumsi Energi Dunia")
 

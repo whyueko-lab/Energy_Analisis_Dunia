@@ -1,6 +1,6 @@
-# ======================================
-# DASHBOARD ENERGI DUNIA - STREAMLIT
-# ======================================
+# ====================================== #
+# DASHBOARD ENERGI DUNIA - STREAMLIT     #
+# ====================================== #
 
 import streamlit as st
 import pandas as pd
@@ -48,15 +48,22 @@ menu = st.sidebar.radio(
 # -------------------------------
 if menu == "📊 Analisis Data":
     st.title("📊 Analisis Deskriptif & Diagnostik")
-    st.dataframe(df.head())
-    
-    st.subheader("Ringkasan Statistik")
-    st.write(df.describe())
-    
-    st.subheader("Korelasi GDP, CO₂, dan Energi")
-    corr = df[['gdp', 'primary_energy_consumption', 'carbon_intensity_elec']].corr()
-    st.write(corr)
-    fig, ax = plt.subplots()
+
+    # Dropdown negara
+    negara = st.selectbox("Pilih Negara:", sorted(df['country'].unique()))
+
+    data_negara = df[df['country'] == negara]
+
+    st.subheader(f"Data Awal – {negara}")
+    st.dataframe(data_negara.head())
+
+    st.subheader(f"Ringkasan Statistik – {negara}")
+    st.write(data_negara.describe())
+
+    st.subheader(f"Korelasi GDP, Energi, dan Intensitas Karbon – {negara}")
+    corr = data_negara[['gdp', 'primary_energy_consumption', 'carbon_intensity_elec']].corr()
+
+    fig, ax = plt.subplots(figsize=(5, 4))
     sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
     st.pyplot(fig)
 
@@ -88,23 +95,34 @@ elif menu == "📈 Visualisasi":
 # -------------------------------
 elif menu == "🤖 Prediksi Energi":
     st.title("🤖 Prediksi Konsumsi Energi (Random Forest)")
-    
+
     X = df[['gdp', 'population', 'renewables_share_energy', 'carbon_intensity_elec']]
     y = df['primary_energy_consumption']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
+
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
     preds = model.predict(X_test)
     mse = mean_squared_error(y_test, preds)
-    
+
     st.write(f"**Mean Squared Error (MSE): {mse:.4f}**")
-    
+
+    # Tambahkan arti variabel
+    st.subheader("📘 Arti Setiap Variabel")
+    st.markdown("""
+    | Variabel             | Arti                       |
+    | -------------------- | -------------------------- |
+    | **GDP**              | Aktivitas ekonomi negara   |
+    | **Population**       | Jumlah penduduk            |
+    | **Renewables share** | Proporsi energi terbarukan |
+    | **Carbon intensity** | Seberapa kotor listriknya  |
+    """)
+
     st.subheader("Simulasi Prediksi Baru")
     gdp = st.slider("GDP (normalized)", 0.0, 1.0, 0.5)
     population = st.slider("Populasi (normalized)", 0.0, 1.0, 0.5)
     renew = st.slider("Renewables Share (normalized)", 0.0, 1.0, 0.5)
     carbon = st.slider("Carbon Intensity (normalized)", 0.0, 1.0, 0.5)
-    
+
     new_pred = model.predict([[gdp, population, renew, carbon]])[0]
     st.success(f"🔮 Prediksi Konsumsi Energi (Normalized): **{new_pred:.4f}**")

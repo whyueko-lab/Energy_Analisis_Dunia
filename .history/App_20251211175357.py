@@ -40,7 +40,7 @@ df = load_data()
 st.sidebar.title("🌍 Analisis Energi Dunia")
 menu = st.sidebar.radio(
     "Pilih Halaman:",
-    ["📊 Analisis Data", "📈 Visualisasi", "🤖 Prediksi Energi", "🌍 Peta Energi Dunia"]
+    ["📊 Analisis Data", "📈 Visualisasi", "🤖 Prediksi Energi"]
 )
 
 # -------------------------------
@@ -384,23 +384,14 @@ elif menu == "🤖 Prediksi Energi":
             return f"• **{label} rendah**, sehingga kontribusinya kecil."
 
     def interpret_output(value, negara, df_neg):
-        mean_val = df_neg['primary_energy_consumption'].mean()
+    mean_val = df_neg['primary_energy_consumption'].mean()
 
-        if value < mean_val * 0.8:
-            return (
-                f"Konsumsi energi diprediksi **lebih rendah** dari tren historis {negara}. "
-                f"Ini menandakan efisiensi atau kebutuhan energi yang menurun."
-            )
-        elif value > mean_val * 1.2:
-            return (
-                f"Konsumsi energi diprediksi **lebih tinggi** dari pola historis {negara}. "
-                f"Ini menandakan meningkatnya kebutuhan energi nasional."
-            )
-        else:
-            return (
-                f"Konsumsi energi berada dalam **kisaran normal** berdasarkan histori {negara}. "
-                f"Tidak ada perubahan signifikan yang terdeteksi."
-            )
+    if value < mean_val * 0.8:
+        return f"Konsumsi energi diprediksi lebih rendah dibanding tren historis {negara}. Ini menunjukkan efisiensi atau perubahan pola penggunaan energi."
+    elif value > mean_val * 1.2:
+        return f"Konsumsi energi diprediksi lebih tinggi dibanding sejarah {negara}. Ini sinyal peningkatan permintaan energi."
+    else:
+        return f"Konsumsi energi berada pada kisaran normal dari pola historis {negara}."
 
     st.markdown(f"""
     ### 🔍 Analisis Input
@@ -410,7 +401,7 @@ elif menu == "🤖 Prediksi Energi":
     {interpret_factor(carbon, "Intensitas karbon")}
 
     ### 📌 Kesimpulan Prediksi – {negara}
-    {interpret_output(new_pred, negara, df_neg)}
+    {interpret_output(new_pred)}
     """)
 
     # ============================
@@ -425,69 +416,3 @@ elif menu == "🤖 Prediksi Energi":
     | **Renewables share** | Proporsi energi terbarukan |
     | **Carbon intensity** | Seberapa kotor listriknya  |
     """)
-   
-    # -------------------------------
-    # 6️⃣ Halaman: Peta Energi Dunia
-    # -------------------------------
-elif menu == "🌍 Peta Energi Dunia":
-    st.title("🌍 Peta Konsumsi Energi Dunia")
-
-    # Lokasi koordinat negara
-    country_location = {
-        'China': [35.8617, 104.1954],
-        'United States': [37.0902, -95.7129],
-        'India': [20.5937, 78.9629],
-        'Indonesia': [-0.7893, 113.9213],
-        'Brazil': [-14.2350, -51.9253],
-    }
-
-    st.markdown("Peta ini menunjukkan konsumsi energi rata-rata masing-masing negara berdasarkan data historis.")
-
-    # Hitung energi rata-rata
-    avg_energy = df.groupby("country")['primary_energy_consumption'].mean().to_dict()
-
-    # ============================
-    # 1. FOLIUM BUBBLE MAP
-    # ============================
-    import folium
-    from streamlit_folium import st_folium
-
-    st.subheader("🟠 Peta Bubble Konsumsi Energi (Folium)")
-
-    m = folium.Map(location=[10, 10], zoom_start=2)
-
-    for negara, val in avg_energy.items():
-        if negara in country_location:
-            lat, lon = country_location[negara]
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=10 + val * 25,
-                popup=f"{negara}<br>Konsumsi Energi: {val:.3f}",
-                color="crimson",
-                fill=True,
-                fill_opacity=0.7
-            ).add_to(m)
-
-    st_folium(m, width=700, height=500)
-
-    # ============================
-    # 2. ANIMATED CHOROPLETH (Plotly)
-    # ============================
-    st.subheader("🟦 Peta Dinamis Konsumsi Energi per Tahun (Plotly)")
-
-    import plotly.express as px
-
-    df_geo = df.copy()
-
-    fig = px.choropleth(
-        df_geo,
-        locations="country",
-        locationmode="country names",
-        color="primary_energy_consumption",
-        animation_frame="year",
-        color_continuous_scale="YlOrRd",
-        range_color=(0, df_geo['primary_energy_consumption'].max()),
-        title="Perubahan Konsumsi Energi dari Waktu ke Waktu"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)

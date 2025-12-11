@@ -40,7 +40,7 @@ df = load_data()
 st.sidebar.title("🌍 Analisis Energi Dunia")
 menu = st.sidebar.radio(
     "Pilih Halaman:",
-    ["📊 Analisis Data", "📈 Visualisasi", "🤖 Prediksi Energi", "🌍 Peta Energi Dunia"]
+    ["📊 Analisis Data", "📈 Visualisasi", "🤖 Prediksi Energi"]
 )
 
 # -------------------------------
@@ -318,104 +318,18 @@ elif menu == "📈 Visualisasi":
 elif menu == "🤖 Prediksi Energi":
     st.title("🤖 Prediksi Konsumsi Energi (Random Forest)")
 
-    # ============================
-    # 1. PILIH NEGARA
-    # ============================
-    negara = st.selectbox("Pilih Negara untuk Model Prediksi:", df['country'].unique())
-
-    df_neg = df[df['country'] == negara].copy()
-
-    st.write(f"Model akan dilatih menggunakan data historis **{negara}**.")
-
-    # ============================
-    # 2. TRAIN MODEL KHUSUS NEGARA
-    # ============================
-    X = df_neg[['gdp', 'population', 'renewables_share_energy', 'carbon_intensity_elec']]
-    y = df_neg['primary_energy_consumption']
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    X = df[['gdp', 'population', 'renewables_share_energy', 'carbon_intensity_elec']]
+    y = df['primary_energy_consumption']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-
     preds = model.predict(X_test)
-
-    from sklearn.metrics import r2_score, mean_absolute_error
-
     mse = mean_squared_error(y_test, preds)
-    r2 = r2_score(y_test, preds)
-    mae = mean_absolute_error(y_test, preds)
 
-    # ============================
-    # 3. TAMPILKAN METRIK
-    # ============================
-    st.subheader("📊 Kinerja Model")
-    st.write(f"**MSE:** {mse:.4f}")
-    st.write(f"**MAE:** {mae:.4f}")
-    st.write(f"**R² Score:** {r2:.4f}")
+    st.write(f"**Mean Squared Error (MSE): {mse:.4f}**")
 
-    # ============================
-    # 4. INPUT SIMULASI
-    # ============================
-    st.subheader("🎛 Simulasi Prediksi Baru")
-
-    gdp = st.slider("GDP (normalized)", 0.0, 1.0, float(X['gdp'].mean()))
-    population = st.slider("Populasi (normalized)", 0.0, 1.0, float(X['population'].mean()))
-    renew = st.slider("Renewables Share (normalized)", 0.0, 1.0, float(X['renewables_share_energy'].mean()))
-    carbon = st.slider("Carbon Intensity (normalized)", 0.0, 1.0, float(X['carbon_intensity_elec'].mean()))
-
-    new_pred = model.predict([[gdp, population, renew, carbon]])[0]
-
-    st.success(f"🔮 Prediksi Konsumsi Energi (Normalized): **{new_pred:.4f}**")
-
-    # ============================
-    # 5. INTERPRETASI OTOMATIS
-    # ============================
-    st.subheader("🧠 Interpretasi Otomatis Prediksi")
-
-    def interpret_factor(value, label):
-        if value > 0.7:
-            return f"• **{label} sangat tinggi**, memberikan pengaruh besar terhadap konsumsi energi."
-        elif value > 0.4:
-            return f"• **{label} berada pada tingkat sedang**, memberi kontribusi moderat."
-        else:
-            return f"• **{label} rendah**, sehingga kontribusinya kecil."
-
-    def interpret_output(value, negara, df_neg):
-        mean_val = df_neg['primary_energy_consumption'].mean()
-
-        if value < mean_val * 0.8:
-            return (
-                f"Konsumsi energi diprediksi **lebih rendah** dari tren historis {negara}. "
-                f"Ini menandakan efisiensi atau kebutuhan energi yang menurun."
-            )
-        elif value > mean_val * 1.2:
-            return (
-                f"Konsumsi energi diprediksi **lebih tinggi** dari pola historis {negara}. "
-                f"Ini menandakan meningkatnya kebutuhan energi nasional."
-            )
-        else:
-            return (
-                f"Konsumsi energi berada dalam **kisaran normal** berdasarkan histori {negara}. "
-                f"Tidak ada perubahan signifikan yang terdeteksi."
-            )
-
-    st.markdown(f"""
-    ### 🔍 Analisis Input
-    {interpret_factor(gdp, "GDP")}
-    {interpret_factor(population, "Populasi")}
-    {interpret_factor(renew, "Energi terbarukan")}
-    {interpret_factor(carbon, "Intensitas karbon")}
-
-    ### 📌 Kesimpulan Prediksi – {negara}
-    {interpret_output(new_pred, negara, df_neg)}
-    """)
-
-    # ============================
-    # 6. ARTI VARIABEL
-    # ============================
+    # Tambahkan arti variabel
     st.subheader("📘 Arti Setiap Variabel")
     st.markdown("""
     | Variabel             | Arti                       |
@@ -425,69 +339,12 @@ elif menu == "🤖 Prediksi Energi":
     | **Renewables share** | Proporsi energi terbarukan |
     | **Carbon intensity** | Seberapa kotor listriknya  |
     """)
-   
-    # -------------------------------
-    # 6️⃣ Halaman: Peta Energi Dunia
-    # -------------------------------
-elif menu == "🌍 Peta Energi Dunia":
-    st.title("🌍 Peta Konsumsi Energi Dunia")
 
-    # Lokasi koordinat negara
-    country_location = {
-        'China': [35.8617, 104.1954],
-        'United States': [37.0902, -95.7129],
-        'India': [20.5937, 78.9629],
-        'Indonesia': [-0.7893, 113.9213],
-        'Brazil': [-14.2350, -51.9253],
-    }
+    st.subheader("Simulasi Prediksi Baru")
+    gdp = st.slider("GDP (normalized)", 0.0, 1.0, 0.5)
+    population = st.slider("Populasi (normalized)", 0.0, 1.0, 0.5)
+    renew = st.slider("Renewables Share (normalized)", 0.0, 1.0, 0.5)
+    carbon = st.slider("Carbon Intensity (normalized)", 0.0, 1.0, 0.5)
 
-    st.markdown("Peta ini menunjukkan konsumsi energi rata-rata masing-masing negara berdasarkan data historis.")
-
-    # Hitung energi rata-rata
-    avg_energy = df.groupby("country")['primary_energy_consumption'].mean().to_dict()
-
-    # ============================
-    # 1. FOLIUM BUBBLE MAP
-    # ============================
-    import folium
-    from streamlit_folium import st_folium
-
-    st.subheader("🟠 Peta Bubble Konsumsi Energi (Folium)")
-
-    m = folium.Map(location=[10, 10], zoom_start=2)
-
-    for negara, val in avg_energy.items():
-        if negara in country_location:
-            lat, lon = country_location[negara]
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=10 + val * 25,
-                popup=f"{negara}<br>Konsumsi Energi: {val:.3f}",
-                color="crimson",
-                fill=True,
-                fill_opacity=0.7
-            ).add_to(m)
-
-    st_folium(m, width=700, height=500)
-
-    # ============================
-    # 2. ANIMATED CHOROPLETH (Plotly)
-    # ============================
-    st.subheader("🟦 Peta Dinamis Konsumsi Energi per Tahun (Plotly)")
-
-    import plotly.express as px
-
-    df_geo = df.copy()
-
-    fig = px.choropleth(
-        df_geo,
-        locations="country",
-        locationmode="country names",
-        color="primary_energy_consumption",
-        animation_frame="year",
-        color_continuous_scale="YlOrRd",
-        range_color=(0, df_geo['primary_energy_consumption'].max()),
-        title="Perubahan Konsumsi Energi dari Waktu ke Waktu"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+    new_pred = model.predict([[gdp, population, renew, carbon]])[0]
+    st.success(f"🔮 Prediksi Konsumsi Energi (Normalized): **{new_pred:.4f}**")
