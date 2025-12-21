@@ -6,488 +6,210 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+
+
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 
-# -------------------------------
-# 1️⃣ Load dan Persiapkan Data
-# -------------------------------
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="World Energy Dashboard", layout="wide", page_icon="⚡")
+
+# --- 1️⃣ LOAD DATA (CACHED) ---
 @st.cache_data
 def load_data():
+    # Pastikan file CSV tersedia di direktori yang benar
     df = pd.read_csv("data/owid-energy-data.csv")
-    cols = ['country', 'year', 'primary_energy_consumption',
-            'renewables_share_energy', 'carbon_intensity_elec',
-            'gdp', 'population']
+    cols = [
+        'country', 'year', 'primary_energy_consumption',
+        'renewables_share_energy', 'carbon_intensity_elec',
+        'gdp', 'population'
+    ]
     df = df[cols].dropna()
     df['year'] = df['year'].astype(int)
-    
+    # Fokus pada 5 negara besar
     negara_fokus = ['China', 'United States', 'India', 'Indonesia', 'Brazil']
-    df = df[df['country'].isin(negara_fokus)]
-    
-    scaler = MinMaxScaler()
-    num_cols = ['primary_energy_consumption', 'renewables_share_energy', 
-                'carbon_intensity_elec', 'gdp', 'population']
-    df[num_cols] = scaler.fit_transform(df[num_cols])
-    return df
+    return df[df['country'].isin(negara_fokus)]
 
 df = load_data()
 
-# -------------------------------
-# 2️⃣ Sidebar Navigasi
-# -------------------------------
-st.sidebar.title("🌍 Analisis Energi Dunia")
+# Data untuk visualisasi (Konversi Unit)
+df_display = df.copy()
+df_display['gdp_trillion'] = df_display['gdp'] / 1e12
+df_display['population_million'] = df_display['population'] / 1e6
+
+# --- 2️⃣ MODEL TRAINING (CACHED RESOURCE) ---
+@st.cache_resource
+def train_energy_model(data_negara):
+    X = data_negara[['gdp','population','renewables_share_energy','carbon_intensity_elec']]
+    y = data_negara['primary_energy_consumption']
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    scaler = MinMaxScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train_scaled, y_train)
+    
+    # Hitung metrik evaluasi
+    y_pred = model.predict(X_test_scaled)
+    metrics = {
+        'mse': mean_squared_error(y_test, y_pred),
+        'mae': mean_absolute_error(y_test, y_pred),
+        'r2': r2_score(y_test, y_pred)
+    }
+    
+    return model, scaler, metrics, X_test_scaled, y_test
+
+# --- 3️⃣ SIDEBAR ---
+st.sidebar.title("🌍 Navigasi Analisis")
 menu = st.sidebar.radio(
     "Pilih Halaman:",
     ["📊 Analisis Data", "📈 Visualisasi", "🤖 Prediksi Energi", "🌍 Peta Energi Dunia"]
 )
 
-# -------------------------------
-# 3️⃣ Halaman: Analisis Data
-# -------------------------------
+# ============================================================
+# 4️⃣ HALAMAN: ANALISIS DATA
+# ============================================================
 if menu == "📊 Analisis Data":
-    st.title("📊 Analisis Deskriptif & Diagnostik")
+    st.title("📊 Analisis Deskriptif & Korelasi")
+    mode = st.radio("Pilih Mode:", ["Analisis Satu Negara", "Perbandingan Dua Negara"], horizontal=True)
 
-    # Pilih Mode Analisis
-    mode = st.radio("Pilih Mode:", ["Analisis Satu Negara", "Perbandingan Dua Negara"])
-
-    # ================================================
-    # MODE 1: ANALISIS SATU NEGARA
-    # ================================================
     if mode == "Analisis Satu Negara":
         negara = st.selectbox("Pilih Negara:", sorted(df['country'].unique()))
-        data_negara = df[df['country'] == negara]
-
-        st.subheader(f"Data Awal – {negara}")
-        st.dataframe(data_negara.head())
+        data = df_display[df_display['country'] == negara]
 
         st.subheader(f"Ringkasan Statistik – {negara}")
-        st.write(data_negara.describe())
+        st.dataframe(data[['year','gdp_trillion','population_million','primary_energy_consumption','renewables_share_energy']].tail())
 
-        st.subheader(f"Korelasi GDP, Energi, dan Intensitas Karbon – {negara}")
-        corr = data_negara[['gdp', 'primary_energy_consumption', 'carbon_intensity_elec']].corr()
-
-        fig, ax = plt.subplots(figsize=(5, 4))
-        sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
-        st.pyplot(fig)
-
-        st.markdown("""
-        ### 📘 Penjelasan Korelasi
-        Korelasi menunjukkan hubungan antar-variabel:  
-        - Nilai positif tinggi menunjukkan dua variabel naik bersama.  
-        - Nilai negatif tinggi menunjukkan saling berlawanan.  
-        - Nilai mendekati 0 berarti hubungan lemah.  
-        """)
+        st.subheader("Matriks Korelasi")
+        corr = data[['gdp','primary_energy_consumption','carbon_intensity_elec']].corr()
         
-        # ====================================
-        # INTERPRETASI OTOMATIS – SATU NEGARA
-        # ====================================
-        st.subheader("🧠 Interpretasi Otomatis")
-
-        # Hitung rata-rata
-        gdp_mean = data_negara['gdp'].mean()
-        energy_mean = data_negara['primary_energy_consumption'].mean()
-        carbon_mean = data_negara['carbon_intensity_elec'].mean()
-        renew_mean = data_negara['renewables_share_energy'].mean()
-
-        # Hitung tren (kenaikan / penurunan)
-        data_sorted = data_negara.sort_values('year')
-        energy_trend = data_sorted['primary_energy_consumption'].diff().mean()
-        carbon_trend = data_sorted['carbon_intensity_elec'].diff().mean()
-        renew_trend = data_sorted['renewables_share_energy'].diff().mean()
-
-        def trend_text(value, label):
-            if value > 0:
-                return f"• **{label} menunjukkan kecenderungan naik** sepanjang tahun."
-            elif value < 0:
-                return f"• **{label} menunjukkan kecenderungan turun**, tanda perubahan positif."
-            else:
-                return f"• **{label} relatif stabil** tanpa perubahan signifikan."
-
-        # Interpretasi korelasi
-        corr_gdp_energy = corr.loc['gdp','primary_energy_consumption']
-        corr_energy_carbon = corr.loc['primary_energy_consumption','carbon_intensity_elec']
-
-        def interpret_corr(value, var1, var2):
-            abs_val = abs(value)
-            if abs_val > 0.7:
-                strength = "hubungan kuat"
-            elif abs_val > 0.4:
-                strength = "hubungan sedang"
-            else:
-                strength = "hubungan lemah"
-
-            if value > 0:
-                direction = "bergerak searah"
-            elif value < 0:
-                direction = "bergerak saling berlawanan"
-            else:
-                direction = "tidak punya arah hubungan"
-
-            return f"• **{var1} dan {var2}** memiliki **{strength}** dan cenderung **{direction}**."
-
-        st.markdown(f"""
-        ### 📌 Ringkasan Energi untuk **{negara}**
-        • Rata-rata konsumsi energi: **{energy_mean:.3f}**  
-        • Intensitas karbon listrik: **{carbon_mean:.3f}**  
-        • Proporsi energi terbarukan: **{renew_mean:.3f}**  
-        • Aktivitas ekonomi (GDP): **{gdp_mean:.3f}**
-
-        ### 📈 Tren dari Waktu ke Waktu
-        {trend_text(energy_trend, "Konsumsi energi")}
-        {trend_text(carbon_trend, "Intensitas karbon listrik")}
-        {trend_text(renew_trend, "Energi terbarukan")}
-
-        ### 🔍 Interpretasi Korelasi
-        {interpret_corr(corr_gdp_energy, "GDP", "konsumsi energi")}
-        {interpret_corr(corr_energy_carbon, "konsumsi energi", "intensitas karbon")}
-        """)    
-        
-
-    # ================================================
-    # MODE 2: PERBANDINGAN DUA NEGARA
-    # ================================================
-    else:
-        st.subheader("🔍 Perbandingan Dua Negara")
-
-        col1, col2 = st.columns(2)
+        col1, col2 = st.columns([1.5, 1])
         with col1:
-            negara1 = st.selectbox("Pilih Negara 1:", sorted(df['country'].unique()), key="n1")
+            fig, ax = plt.subplots()
+            sns.heatmap(corr, annot=True, cmap="RdYlGn", ax=ax)
+            st.pyplot(fig)
+        
         with col2:
-            negara2 = st.selectbox("Pilih Negara 2:", sorted(df['country'].unique()), key="n2")
-
-        data1 = df[df['country'] == negara1]
-        data2 = df[df['country'] == negara2]
-
-        st.markdown(f"### 📊 Ringkasan Statistik\nPerbandingan antara **{negara1}** dan **{negara2}**")
-
-        # Tampilkan mean tiap variabel
-        compare_df = pd.DataFrame({
-            'Variabel': ['GDP', 'Populasi', 'Konsumsi Energi', 'Energi Terbarukan', 'Intensitas Karbon'],
-            negara1: [
-                data1['gdp'].mean(),
-                data1['population'].mean(),
-                data1['primary_energy_consumption'].mean(),
-                data1['renewables_share_energy'].mean(),
-                data1['carbon_intensity_elec'].mean()
-            ],
-            negara2: [
-                data2['gdp'].mean(),
-                data2['population'].mean(),
-                data2['primary_energy_consumption'].mean(),
-                data2['renewables_share_energy'].mean(),
-                data2['carbon_intensity_elec'].mean()
-            ],
-        })
-
-        st.dataframe(compare_df)
-
-        # Heatmap dua negara
-        st.subheader("📈 Korelasi Masing-Masing Negara")
-        colA, colB = st.columns(2)
-
-        with colA:
-            st.markdown(f"**{negara1}**")
-            corr1 = data1[['gdp', 'primary_energy_consumption', 'carbon_intensity_elec']].corr()
-            fig1, ax1 = plt.subplots(figsize=(4, 3))
-            sns.heatmap(corr1, annot=True, cmap="coolwarm", ax=ax1)
-            st.pyplot(fig1)
-
-        with colB:
-            st.markdown(f"**{negara2}**")
-            corr2 = data2[['gdp', 'primary_energy_consumption', 'carbon_intensity_elec']].corr()
-            fig2, ax2 = plt.subplots(figsize=(4, 3))
-            sns.heatmap(corr2, annot=True, cmap="coolwarm", ax=ax2)
-            st.pyplot(fig2)
-
-        # ==========================================
-        # INTERPRETASI OTOMATIS
-        # ==========================================
-        st.subheader("🧠 Interpretasi Otomatis")
-
-        def interpret(var, label):
-            val1 = compare_df[negara1][compare_df['Variabel'] == var].values[0]
-            val2 = compare_df[negara2][compare_df['Variabel'] == var].values[0]
-
-            if val1 > val2:
-                return f"• **{negara1}** memiliki {label} lebih tinggi dibanding **{negara2}**."
-            elif val2 > val1:
-                return f"• **{negara2}** memiliki {label} lebih tinggi dibanding **{negara1}**."
+            st.markdown("### 📝 Interpreter Korelasi")
+            c_gdp = corr.loc['gdp', 'primary_energy_consumption']
+            c_carb = corr.loc['primary_energy_consumption', 'carbon_intensity_elec']
+            
+            msg = f"Di **{negara}**, hubungan antara GDP dan energi adalah **{c_gdp:.2f}**. "
+            if abs(c_gdp) > 0.8:
+                msg += "Ini menunjukkan ekonomi sangat bergantung pada konsumsi energi."
             else:
-                return f"• Kedua negara memiliki {label} yang hampir sama."
+                msg += "Hubungan ini moderat, mengindikasikan adanya faktor lain yang memengaruhi ekonomi."
+                
+            st.info(msg)
+            st.write(f"Korelasi Energi-Karbon: **{c_carb:.2f}**")
+            if c_carb < 0:
+                st.success("Bagus! Kenaikan energi tidak dibarengi kenaikan emisi (Decoupling).")
 
-        st.markdown(f"""
-        #### 📌 Kesimpulan Perbandingan:
-        {interpret("GDP", "GDP")}
-        {interpret("Populasi", "jumlah penduduk")}
-        {interpret("Konsumsi Energi", "konsumsi energi")}
-        {interpret("Energi Terbarukan", "porsi energi terbarukan")}
-        {interpret("Intensitas Karbon", "intensitas karbon listrik")}
-        """)
+    else:
+        c1, c2 = st.columns(2)
+        with c1: n1 = st.selectbox("Negara 1:", df['country'].unique(), index=0) 
+        with c2: n2 = st.selectbox("Negara 2:", df['country'].unique(), index=1)
         
+        m1 = df[df['country'] == n1].mean(numeric_only=True)
+        m2 = df[df['country'] == n2].mean(numeric_only=True)
         
+        st.table(pd.DataFrame({n1: m1, n2: m2}).T[['gdp', 'primary_energy_consumption', 'renewables_share_energy']])
+        
+        st.markdown("### 📝 Interpreter Perbandingan")
+        gap = abs(m1['renewables_share_energy'] - m2['renewables_share_energy'])
+        winner = n1 if m1['renewables_share_energy'] > m2['renewables_share_energy'] else n2
+        st.success(f"**{winner}** memimpin transisi energi dengan selisih **{gap:.2f}%** lebih tinggi dalam porsi energi terbarukan.")
 
-# -------------------------------
-# 4️⃣ Halaman: Visualisasi
-# -------------------------------
+# ============================================================
+# 5️⃣ HALAMAN: VISUALISASI
+# ============================================================
 elif menu == "📈 Visualisasi":
-    st.title("📈 Visualisasi Energi")
-    
+    st.title("📈 Visualisasi Tren Historis")
     negara = st.selectbox("Pilih Negara:", df['country'].unique())
-    data_negara = df[df['country'] == negara].sort_values("year")
+    data = df_display[df_display['country'] == negara].sort_values("year")
 
-    # ==========================
-    # 1. Grafik Konsumsi Energi
-    # ==========================
-    st.subheader(f"Tren Konsumsi Energi - {negara}")
-    fig, ax = plt.subplots()
-    ax.plot(data_negara['year'], data_negara['primary_energy_consumption'], marker='o')
-    ax.set_xlabel("Tahun")
-    ax.set_ylabel("Konsumsi Energi (Normalized)")
-    st.pyplot(fig)
+    tab1, tab2 = st.tabs(["🚀 Konsumsi & GDP", "🍃 Transisi Hijau"])
 
-    # ----------------------------
-    # Analisis tren konsumsi energi
-    # ----------------------------
-    energy_trend = data_negara['primary_energy_consumption'].diff().mean()
+    with tab1:
+        st.plotly_chart(px.line(data, x='year', y=['primary_energy_consumption', 'gdp_trillion'], title="Pertumbuhan Ekonomi vs Energi"), use_container_width=True)
+        # Interpreter Tren
+        diff = ((data['primary_energy_consumption'].iloc[-1] / data['primary_energy_consumption'].iloc[0]) - 1) * 100
+        st.markdown(f"**Analisis Tren:** Konsumsi energi meningkat sebesar **{diff:.1f}%** sejak awal periode data.")
 
-    def interpret_trend(value, label):
-        if value > 0:
-            return f"• {label} **mengalami kenaikan** dari tahun ke tahun."
-        elif value < 0:
-            return f"• {label} **menurun secara bertahap** selama periode data."
+    with tab2:
+        st.plotly_chart(px.area(data, x='year', y='renewables_share_energy', color_discrete_sequence=['green'], title="Porsi Energi Terbarukan"), use_container_width=True)
+        
+        # Green Interpreter
+        last_val = data['renewables_share_energy'].iloc[-1]
+        st.markdown("### 📝 Interpreter Transisi Hijau")
+        if last_val > 20:
+            st.success(f"Status: **Pionir Hijau**. Dengan porsi {last_val:.1f}%, {negara} berada di jalur yang benar menuju Net Zero.")
         else:
-            return f"• {label} **stabil dan tidak menunjukkan perubahan signifikan**."
+            st.warning(f"Status: **Ketergantungan Fosil**. Porsi {last_val:.1f}% masih cukup rendah untuk skala ekonomi besar.")
 
-    st.markdown("### 🧠 Interpretasi Tren Konsumsi Energi")
-    st.write(interpret_trend(energy_trend, "Konsumsi energi"))
-
-    # ============================================
-    # 2. Grafik Perbandingan Terbarukan & Karbon
-    # ============================================
-    st.subheader("Perbandingan Energi Terbarukan vs Intensitas Karbon")
-
-    fig, ax = plt.subplots()
-    sns.barplot(
-        x='year', 
-        y='renewables_share_energy',
-        data=data_negara,
-        color='green',
-        label='Energi Terbarukan',
-        ax=ax
-    )
-    sns.lineplot(
-        x='year', 
-        y='carbon_intensity_elec',
-        data=data_negara,
-        color='red',
-        label='Intensitas Karbon',
-        ax=ax
-    )
-    ax.legend()
-    st.pyplot(fig)
-
-    # -------------------------------
-    # Analisis tren energi terbarukan
-    # -------------------------------
-    renew_trend = data_negara['renewables_share_energy'].diff().mean()
-    carbon_trend = data_negara['carbon_intensity_elec'].diff().mean()
-
-    st.markdown("### 🧠 Interpretasi Tren Energi Terbarukan & Karbon")
-
-    st.write(interpret_trend(renew_trend, "Proporsi energi terbarukan"))
-    st.write(interpret_trend(carbon_trend, "Intensitas karbon"))
-
-    # ========================
-    # Kesimpulan Visualisasi
-    # ========================
-    st.markdown("### 📌 Kesimpulan Utama Visualisasi")
-    st.markdown(f"""
-    • {interpret_trend(energy_trend, "Konsumsi energi")}  
-    • {interpret_trend(renew_trend, "Energi terbarukan")}  
-    • {interpret_trend(carbon_trend, "Intensitas karbon")}  
-
-    Dari ketiga indikator tersebut dapat terlihat bagaimana **{negara}** bergerak menuju energi yang lebih efisien, lebih bersih, atau justru sebaliknya.
-    """)
-
-
-# -------------------------------
-# 5️⃣ Halaman: Prediksi
-# -------------------------------
+# ============================================================
+# 6️⃣ HALAMAN: PREDIKSI ENERGI
+# ============================================================
 elif menu == "🤖 Prediksi Energi":
-    st.title("🤖 Prediksi Konsumsi Energi (Random Forest)")
+    st.title("🤖 Prediksi Konsumsi (Random Forest)")
+    negara = st.selectbox("Pilih Negara:", df['country'].unique())
+    df_neg = df[df['country'] == negara]
 
-    # ============================
-    # 1. PILIH NEGARA
-    # ============================
-    negara = st.selectbox("Pilih Negara untuk Model Prediksi:", df['country'].unique())
+    model, scaler, metrics, X_test_scaled, y_test = train_energy_model(df_neg)
+    
+    # Metrik Evaluasi
+    st.subheader("📊 Performa Model (Error Metrics)")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("R² Score (Akurasi)", f"{metrics['r2']:.4f}")
+    m2.metric("MAE", f"{metrics['mae']:.2f}")
+    m3.metric("MSE", f"{metrics['mse']:.2f}")
 
-    df_neg = df[df['country'] == negara].copy()
+    with st.expander("📝 Apa arti angka ini?"):
+        st.write(f"Model ini memiliki akurasi $R^2$ sebesar **{metrics['r2']*100:.1f}%**. Artinya, variabel input (GDP, Populasi, dll) mampu menjelaskan sebagian besar pola energi di {negara}.")
 
-    st.write(f"Model akan dilatih menggunakan data historis **{negara}**.")
+    st.markdown("---")
+    st.subheader("🎛 Simulasi Input")
+    col_in1, col_in2 = st.columns(2)
+    with col_in1:
+        g_in = st.slider("GDP (Triliun)", float(df_neg['gdp'].min()/1e12), float(df_neg['gdp'].max()/1e12), float(df_neg['gdp'].mean()/1e12))
+        p_in = st.slider("Populasi (Juta)", float(df_neg['population'].min()/1e6), float(df_neg['population'].max()/1e6), float(df_neg['population'].mean()/1e6))
+    with col_in2:
+        r_in = st.slider("Renewable (%)", 0.0, 100.0, float(df_neg['renewables_share_energy'].mean()))
+        c_in = st.slider("Carbon Intensity", float(df_neg['carbon_intensity_elec'].min()), float(df_neg['carbon_intensity_elec'].max()), float(df_neg['carbon_intensity_elec'].mean()))
 
-    # ============================
-    # 2. TRAIN MODEL KHUSUS NEGARA
-    # ============================
-    X = df_neg[['gdp', 'population', 'renewables_share_energy', 'carbon_intensity_elec']]
-    y = df_neg['primary_energy_consumption']
+    # Prediksi
+    input_scaled = scaler.transform([[g_in*1e12, p_in*1e6, r_in, c_in]])
+    res = model.predict(input_scaled)[0]
+    avg_hist = df_neg['primary_energy_consumption'].mean()
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-
-    preds = model.predict(X_test)
-
-    from sklearn.metrics import r2_score, mean_absolute_error
-
-    mse = mean_squared_error(y_test, preds)
-    r2 = r2_score(y_test, preds)
-    mae = mean_absolute_error(y_test, preds)
-
-    # ============================
-    # 3. TAMPILKAN METRIK
-    # ============================
-    st.subheader("📊 Kinerja Model")
-    st.write(f"**MSE:** {mse:.4f}")
-    st.write(f"**MAE:** {mae:.4f}")
-    st.write(f"**R² Score:** {r2:.4f}")
-
-    # ============================
-    # 4. INPUT SIMULASI
-    # ============================
-    st.subheader("🎛 Simulasi Prediksi Baru")
-
-    gdp = st.slider("GDP (normalized)", 0.0, 1.0, float(X['gdp'].mean()))
-    population = st.slider("Populasi (normalized)", 0.0, 1.0, float(X['population'].mean()))
-    renew = st.slider("Renewables Share (normalized)", 0.0, 1.0, float(X['renewables_share_energy'].mean()))
-    carbon = st.slider("Carbon Intensity (normalized)", 0.0, 1.0, float(X['carbon_intensity_elec'].mean()))
-
-    new_pred = model.predict([[gdp, population, renew, carbon]])[0]
-
-    st.success(f"🔮 Prediksi Konsumsi Energi (Normalized): **{new_pred:.4f}**")
-
-    # ============================
-    # 5. INTERPRETASI OTOMATIS
-    # ============================
-    st.subheader("🧠 Interpretasi Otomatis Prediksi")
-
-    def interpret_factor(value, label):
-        if value > 0.7:
-            return f"• **{label} sangat tinggi**, memberikan pengaruh besar terhadap konsumsi energi."
-        elif value > 0.4:
-            return f"• **{label} berada pada tingkat sedang**, memberi kontribusi moderat."
+    st.markdown("---")
+    res_c1, res_c2 = st.columns([1, 2])
+    with res_c1:
+        st.metric("Hasil Prediksi", f"{res:.2f}", delta=f"{res-avg_hist:.2f} vs Rata-rata")
+        st.markdown("### 📝 Interpreter Prediksi")
+        if res > avg_hist:
+            st.error("Prediksi: Konsumsi Energi Naik. Rekomendasi: Tingkatkan investasi pembangkit baru.")
         else:
-            return f"• **{label} rendah**, sehingga kontribusinya kecil."
+            st.success("Prediksi: Konsumsi Efisien. Skenario ini mendukung penghematan energi nasional.")
+    with res_c2:
+        st.bar_chart(pd.DataFrame({'Data':['Rata-rata', 'Prediksi'], 'Nilai':[avg_hist, res]}), x='Data', y='Nilai')
 
-    def interpret_output(value, negara, df_neg):
-        mean_val = df_neg['primary_energy_consumption'].mean()
-
-        if value < mean_val * 0.8:
-            return (
-                f"Konsumsi energi diprediksi **lebih rendah** dari tren historis {negara}. "
-                f"Ini menandakan efisiensi atau kebutuhan energi yang menurun."
-            )
-        elif value > mean_val * 1.2:
-            return (
-                f"Konsumsi energi diprediksi **lebih tinggi** dari pola historis {negara}. "
-                f"Ini menandakan meningkatnya kebutuhan energi nasional."
-            )
-        else:
-            return (
-                f"Konsumsi energi berada dalam **kisaran normal** berdasarkan histori {negara}. "
-                f"Tidak ada perubahan signifikan yang terdeteksi."
-            )
-
-    st.markdown(f"""
-    ### 🔍 Analisis Input
-    {interpret_factor(gdp, "GDP")}
-    {interpret_factor(population, "Populasi")}
-    {interpret_factor(renew, "Energi terbarukan")}
-    {interpret_factor(carbon, "Intensitas karbon")}
-
-    ### 📌 Kesimpulan Prediksi – {negara}
-    {interpret_output(new_pred, negara, df_neg)}
-    """)
-
-    # ============================
-    # 6. ARTI VARIABEL
-    # ============================
-    st.subheader("📘 Arti Setiap Variabel")
-    st.markdown("""
-    | Variabel             | Arti                       |
-    | -------------------- | -------------------------- |
-    | **GDP**              | Aktivitas ekonomi negara   |
-    | **Population**       | Jumlah penduduk            |
-    | **Renewables share** | Proporsi energi terbarukan |
-    | **Carbon intensity** | Seberapa kotor listriknya  |
-    """)
-   
-    # -------------------------------
-    # 6️⃣ Halaman: Peta Energi Dunia
-    # -------------------------------
+# ============================================================
+# 7️⃣ HALAMAN: PETA ENERGI DUNIA
+# ============================================================
 elif menu == "🌍 Peta Energi Dunia":
-    st.title("🌍 Peta Konsumsi Energi Dunia")
+    st.title("🌍 Peta Sebaran Energi")
+    avg_energy = df.groupby("country")['primary_energy_consumption'].mean().reset_index()
+    
+    st.plotly_chart(px.choropleth(avg_energy, locations="country", locationmode="country names", color="primary_energy_consumption", color_continuous_scale="Viridis"), use_container_width=True)
 
-    # Lokasi koordinat negara
-    country_location = {
-        'China': [35.8617, 104.1954],
-        'United States': [37.0902, -95.7129],
-        'India': [20.5937, 78.9629],
-        'Indonesia': [-0.7893, 113.9213],
-        'Brazil': [-14.2350, -51.9253],
-    }
-
-    st.markdown("Peta ini menunjukkan konsumsi energi rata-rata masing-masing negara berdasarkan data historis.")
-
-    # Hitung energi rata-rata
-    avg_energy = df.groupby("country")['primary_energy_consumption'].mean().to_dict()
-
-    # ============================
-    # 1. FOLIUM BUBBLE MAP
-    # ============================
-    import folium
-    from streamlit_folium import st_folium
-
-    st.subheader("🟠 Peta Bubble Konsumsi Energi (Folium)")
-
-    m = folium.Map(location=[10, 10], zoom_start=2)
-
-    for negara, val in avg_energy.items():
-        if negara in country_location:
-            lat, lon = country_location[negara]
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=10 + val * 25,
-                popup=f"{negara}<br>Konsumsi Energi: {val:.3f}",
-                color="crimson",
-                fill=True,
-                fill_opacity=0.7
-            ).add_to(m)
-
-    st_folium(m, width=700, height=500)
-
-    # ============================
-    # 2. ANIMATED CHOROPLETH (Plotly)
-    # ============================
-    st.subheader("🟦 Peta Dinamis Konsumsi Energi per Tahun (Plotly)")
-
-    import plotly.express as px
-
-    df_geo = df.copy()
-
-    fig = px.choropleth(
-        df_geo,
-        locations="country",
-        locationmode="country names",
-        color="primary_energy_consumption",
-        animation_frame="year",
-        color_continuous_scale="YlOrRd",
-        range_color=(0, df_geo['primary_energy_consumption'].max()),
-        title="Perubahan Konsumsi Energi dari Waktu ke Waktu"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("---")
+    st.subheader("📝 Insight Geografis")
+    top_c = avg_energy.sort_values('primary_energy_consumption', ascending=False).iloc[0]
+    st.info(f"Secara spasial, **{top_c['country']}** mendominasi konsumsi energi. Hal ini menunjukkan pusat aktivitas industri global masih terpusat di wilayah tersebut.")
